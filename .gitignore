@@ -1,0 +1,14 @@
+# Byte-compiled output
+*.elc
+
+# The daemon's dependencies: installed from the lockfile, not committed
+node_modules/
+
+# Frames the daemon writes
+daemon/frame*.png
+
+# What the harness generates -- EXCEPT the one fixture it reads: a real capture
+# of Tidal's OSC, tiled by the two style probes.  That one is an input.
+test/data/*
+!test/data/events.jsonl
+test/e2e/

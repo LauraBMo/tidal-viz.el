@@ -1,0 +1,12 @@
+{
+  "name": "tidal-viz",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Tidal's OSC in, Strudel pianoroll frames out. Emacs displays them.",
+  "dependencies": {
+    "@napi-rs/canvas": "^1.0.9",
+    "@strudel/core": "^1.2.6",
+    "@strudel/draw": "^1.2.6"
+  }
+}
