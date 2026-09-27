@@ -1,0 +1,61 @@
+#+TITLE: The tidal-viz harness
+
+Probes and harnesses for the Tidal → Strudel visualiser.  The real code lives in
+the project at =../daemon/= and =../tidal-viz.el=; the reasoning behind it is
+written up in =../docs/design.md=.
+
+* Does the playhead stay smooth across a mid-stream tempo change?
+- =tempo-track.mjs= — spawns the daemon on a private port, feeds it a =/dirt/play=
+  stream whose cycle clock is the integral of cps with one change at t0+6s (rise
+  and drop), timestamps every stdout frame line, and reports the slopes,
+  monotonicity and the largest step.  It found a real bug: the playhead JUMPED in
+  a single frame -- backwards on a rise, forwards on a drop -- by
+  =(cpsB-cpsA)*(b-0.27)= cycles, where =b= is how long after the switch the next
+  event lands (0.114..0.169 cycles for a 0.575->1.2 change).  The cause was
+  anchoring the clock on the newest event, which Tidal sends ~0.27s in the
+  FUTURE: the step was a fixed time converted to cycles at the current cps, so it
+  changed size the instant a new-cps event arrived.  The daemon now anchors on the
+  newest event that has already been REACHED and extrapolates forward.  Re-running
+  this probe after that change reports *monotone* with a worst step of 0.0445
+  cycles, and the drop's forward leap of +0.1319 becomes one small backward step
+  of -0.0121.  What remains is a sawtooth, not a leap: between events the clock
+  must extrapolate with the last cps it heard, so for up to one event gap it runs
+  at the old tempo and then snaps by about =gap * dcps= (~0.03-0.045 cycles).  Only
+  Tidal could remove that, by announcing a tempo change sooner than the events
+  embody it.  Keep this probe -- it is what would catch a regression.
+  NOTE: its "law check" and "formula check" lines hard-code the PRE-FIX formula,
+  so after the fix those two numbers no longer describe the daemon.  Read the
+  slopes, the monotonicity line and the worst-step line.
+  =--visual-latency L= subtracts exactly =L*cps=.
+  Run =node tempo-track.mjs [rise|drop|latency|phase|all]=; evidence in =data/=.
+  Its own trap: the bundle timetag must be WALL clock -- feeding it =mono()= made
+  the daemon draw one frame and go stale.
+
+* What does @strudel/draw actually offer?
+- =punchcard-calib.mjs= — calibrates =getPunchcardPainter= by putting one block at
+  a known cycle and reading which x-pixels it lands on.  The answer is that it is a
+  thin wrapper around =__pianoroll= and renders byte-identically, and that its 4th
+  argument is a =[lookbehind, lookahead]= tuple rather than =cycles=/=playhead= —
+  passing the latter to the factory is silently ignored.  Run from the test directory:
+  =node --import ../daemon/register.mjs punchcard-calib.mjs=.
+
+* Are the style variants really different?
+- =smear-trajectory.mjs= — does =smear= alone leave a trail, or saturate the
+  canvas?  It leaves none and saturates: =smear= is only truthiness-tested, so
+  0.2/0.5/0.8 are byte-identical, and with no decay term ink climbs to 94% -- a
+  solid block.  This is why =trails= needs a fading wash rather than a smear value,
+  and the sweep that picked =fade: 0.6= is here.
+- =styles-verify.mjs= — renders every style from the *same* haps and reports ink%
+  and distinct colours side by side, with one distinguishing statistic each
+  (playhead orientation, ink bounding box).  It extracts =STYLES= from =daemon.mjs=
+  itself, so it cannot drift from what actually ships.
+- =e2e-check.sh= — drives the real daemon over the real socket and stdin control
+  channel for three style combinations, with outputs under =e2e/=.  Documents a
+  harness gotcha that cost a run: =... | node ... &= makes =$!= the wrapper
+  *subshell*, so killing it orphans the daemon, which then squats on 57121 and makes
+  every later case fail as a *silent no-op* -- no frames, no error.  Use =exec= in
+  the subshell, and check the port before each case.
+- =synth-tidal.mjs= — the synthetic Tidal sender =e2e-check.sh= drives: a
+  =/dirt/play= stream shaped like Tidal's, one event per packet with a bundle
+  timetag ~270ms out, which takes ghci, Tidal, SuperDirt and scsynth out of the
+  picture so that anything slow is the daemon's own code.
